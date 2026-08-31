@@ -250,13 +250,16 @@ request_sudo() {
     sudo -v
 
     # スクリプト実行中はsudoのタイムスタンプを延長し続け、途中でパスワード再入力を求めない
+    # ERRトラップを解除しないと、延長に失敗した際にこのサブシェルがトラップを起動し、
+    # 本体は動作中にもかかわらず「エラーが発生しました」と誤表示される
     (
+        trap - ERR
         while true; do
-            sudo -n true
+            sudo -n true || exit 0
             sleep 60
-            kill -0 "$$" 2>/dev/null || exit
+            kill -0 "$$" 2>/dev/null || exit 0
         done
-    ) 2>/dev/null &
+    ) >/dev/null 2>&1 &
     SUDO_KEEPALIVE_PID=$!
     trap 'kill "$SUDO_KEEPALIVE_PID" 2>/dev/null || true' EXIT
 }
