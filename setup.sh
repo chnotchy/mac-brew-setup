@@ -493,8 +493,8 @@ configure_trackpad() {
     defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadFourFingerHorizSwipeGesture -int 2
     defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadFourFingerVertSwipeGesture -int 2
 
-    # ナチュラルスクロールを無効化（一般的なスクロール方向にする）
-    defaults write NSGlobalDomain com.apple.swipescrolldirection -bool false
+    # ナチュラルスクロールを有効化（コンテンツが指に追従する方向にする）
+    defaults write NSGlobalDomain com.apple.swipescrolldirection -bool true
     
     # Dock を再起動
     killall Dock 2>/dev/null || true
@@ -504,7 +504,7 @@ configure_trackpad() {
     echo "  - カーソル速度: 最大"
     echo "  - Click: Light（軽い）"
     echo "  - 3本指ドラッグ: 有効（Mission Controlなどは4本指スワイプ）"
-    echo "  - ナチュラルスクロール: 無効"
+    echo "  - ナチュラルスクロール: 有効"
 }
 
 # 時計とバッテリー表示設定
@@ -677,7 +677,7 @@ run_checks() {
     check_value "カーソル速度（マウス）" "3" "$(read_default NSGlobalDomain com.apple.mouse.scaling)"
     check_value "クリック感度Light" "0" "$(read_default com.apple.AppleMultitouchTrackpad FirstClickThreshold)"
     check_value "3本指ドラッグ" "1" "$(read_default com.apple.AppleMultitouchTrackpad TrackpadThreeFingerDrag)"
-    check_value "ナチュラルスクロール無効" "0" "$(read_default NSGlobalDomain com.apple.swipescrolldirection)"
+    check_value "ナチュラルスクロール有効" "1" "$(read_default NSGlobalDomain com.apple.swipescrolldirection)"
 
     echo
     echo "[メニューバー]"
