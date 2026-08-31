@@ -512,7 +512,9 @@ configure_menubar() {
     echo "メニューバーの表示設定を変更中"
     
     # 時計の表示形式を設定（秒表示、24時間表示）
-    defaults write com.apple.menuextra.clock DateFormat -string "EEE d MMM HH:mm:ss"
+    # Big Sur 以降、表示形式は DateFormat ではなく個別のキーで管理される
+    defaults write com.apple.menuextra.clock Show24Hour -bool true
+    defaults write com.apple.menuextra.clock ShowSeconds -bool true
     defaults write com.apple.menuextra.clock FlashDateSeparators -bool false
     
     # バッテリーのパーセンテージ表示を有効化
@@ -546,8 +548,14 @@ configure_finder() {
     # タイトルバーにフルパスを表示
     defaults write com.apple.finder _FXShowPosixPathInTitle -bool true
     
-    # サイドバーにホームフォルダを表示
+    # サイドバーを表示
     defaults write com.apple.finder ShowSidebar -bool true
+    
+    # フォルダごとに保存されたビュー設定は FXPreferredViewStyle より優先されるため、
+    # 削除してカラム表示を反映させる（.DS_Store が保持するのはFinderの表示状態のみ）
+    if [ -n "${HOME:-}" ] && [ -d "$HOME" ]; then
+        find "$HOME" -maxdepth 3 -name ".DS_Store" -delete 2>/dev/null || true
+    fi
     
     # Finder を再起動
     killall Finder 2>/dev/null || true
@@ -673,7 +681,8 @@ run_checks() {
 
     echo
     echo "[メニューバー]"
-    check_value "時計の表示形式" "EEE d MMM HH:mm:ss" "$(read_default com.apple.menuextra.clock DateFormat)"
+    check_value "時計: 24時間表示" "1" "$(read_default com.apple.menuextra.clock Show24Hour)"
+    check_value "時計: 秒表示" "1" "$(read_default com.apple.menuextra.clock ShowSeconds)"
     check_value "バッテリー％表示" "1" "$(read_default_currenthost com.apple.controlcenter BatteryShowPercentage)"
 
     echo
