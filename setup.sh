@@ -316,6 +316,14 @@ setup_homebrew() {
 }
 
 # Brewfile に基づいてアプリケーションをインストール
+# Brewfile のうち、まだ満たされていない項目を1行ずつ返す
+missing_bundle_items() {
+    # brew bundle check は内訳を標準エラーに出すため 2>&1 でまとめて拾う
+    brew bundle check --verbose --file="$SCRIPT_DIR/Brewfile" 2>&1 \
+        | grep -E "needs to be" \
+        | sed -E 's/^→[[:space:]]*//' || true
+}
+
 install_apps() {
     echo "Brewfile に基づいてアプリケーションをインストール中"
     
@@ -326,18 +334,34 @@ install_apps() {
     
     if brew bundle --file="$SCRIPT_DIR/Brewfile"; then
         echo "アプリケーションのインストール完了"
-    else
-        echo "一部アプリケーションのインストールに失敗しましたが、処理を続行します"
+        return
     fi
+    
+    # ダウンロードの失敗やサービス起動の取りこぼしは再試行で解消することが多い
+    echo "一部の項目に失敗したため、再試行します"
+    
+    if brew bundle --file="$SCRIPT_DIR/Brewfile"; then
+        echo "アプリケーションのインストール完了"
+        return
+    fi
+    
+    echo "以下の項目を導入できませんでした"
+    missing_bundle_items | sed 's/^/  - /'
+    echo "Homebrew以外の方法で既に導入されているアプリは、Homebrewの管理下にないため"
+    echo "未導入として扱われます。その場合は次のコマンドで取り込めます"
+    echo "  brew install --cask --force <名前>"
+    echo "セットアップは続行します"
 }
 
 # Chrome と、デフォルトブラウザの設定に使うコマンドをインストールする
 install_browser_tools() {
     echo "Chrome をインストール中"
 
-    if [ -d "/Applications/Google Chrome.app" ]; then
+    # アプリの有無で判定すると、Homebrew以外で導入された場合に
+    # Homebrewの管理下に入らないまま素通りしてしまう
+    if brew list --cask google-chrome &> /dev/null; then
         echo "Chrome は既にインストールされています"
-    elif ! brew install --cask google-chrome; then
+    elif ! brew install --cask --adopt google-chrome; then
         echo "Chrome のインストールに失敗しました。後続の一括インストールで再試行します"
     fi
 
@@ -630,6 +654,21 @@ sleep_is_disabled() {
     [ -n "$values" ] && ! echo "$values" | grep -qv '^0$'
 }
 
+# Brewfile の充足状況を、未導入の項目まで含めて表示する
+# 「未導入あり」だけでは現場で何を直せばよいか分からないため
+check_bundle() {
+    local missing
+    missing="$(missing_bundle_items)"
+
+    if [ -z "$missing" ]; then
+        check_ok "Brewfile のパッケージ"
+        return
+    fi
+
+    check_ng "Brewfile のパッケージ" "未導入の項目あり"
+    printf '%s\n' "$missing" | sed 's/^/         /'
+}
+
 node_exporter_is_running() {
     brew services list 2>/dev/null | awk '$1=="node_exporter" {print $2}' | grep -q "started"
 }
@@ -648,9 +687,7 @@ run_checks() {
     check_condition "Homebrew" "未インストール" command -v brew
 
     if command -v brew &> /dev/null; then
-        check_condition "Brewfile のパッケージ" \
-            "未導入の項目あり。brew bundle check --verbose --file=$SCRIPT_DIR/Brewfile で確認" \
-            brew bundle check --file="$SCRIPT_DIR/Brewfile"
+        check_bundle
         check_condition "node_exporter サービス" "起動していません" node_exporter_is_running
     fi
 
