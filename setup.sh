@@ -328,17 +328,18 @@ install_apps() {
     fi
 }
 
-# Chrome をインストールする
-install_chrome() {
+# Chrome と、デフォルトブラウザの設定に使うコマンドをインストールする
+install_browser_tools() {
     echo "Chrome をインストール中"
 
     if [ -d "/Applications/Google Chrome.app" ]; then
         echo "Chrome は既にインストールされています"
-        return
+    elif ! brew install --cask google-chrome; then
+        echo "Chrome のインストールに失敗しました。後続の一括インストールで再試行します"
     fi
 
-    if ! brew install --cask google-chrome; then
-        echo "Chrome のインストールに失敗しました。後続の一括インストールで再試行します"
+    if ! brew install defaultbrowser; then
+        echo "defaultbrowser のインストールに失敗しました"
     fi
 }
 
@@ -626,6 +627,11 @@ run_checks() {
     echo "セットアップ結果を検証します"
     echo
 
+    # PATHが通っていないだけの場合に備え、実体があれば読み込む
+    if ! command -v brew &> /dev/null && [ -x /opt/homebrew/bin/brew ]; then
+        eval "$(/opt/homebrew/bin/brew shellenv)"
+    fi
+
     echo "[前提ツール]"
     check_condition "Command Line Tools" "未インストール" command_line_tools_installed
     check_condition "Homebrew" "未インストール" command -v brew
@@ -743,7 +749,7 @@ main() {
     # Homebrew のセットアップ
     setup_homebrew
     
-    install_chrome
+    install_browser_tools
     set_chrome_default_browser
     
     echo

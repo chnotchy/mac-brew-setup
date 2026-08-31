@@ -20,8 +20,10 @@ curl -fsSL https://github.com/chnotchy/mac-brew-setup/archive/main.tar.gz | tar 
 
 `--check` を付けると、設定を一切変更せずに現在の状態だけを検証します。再起動後に実行することを推奨します。
 
+セットアップ時に展開されたディレクトリがホームに残っているので、そこから実行します。
+
 ```bash
-./setup.sh --check
+~/mac-brew-setup-main/setup.sh --check
 ```
 
 ## セットアップされる内容
