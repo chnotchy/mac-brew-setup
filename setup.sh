@@ -219,12 +219,27 @@ install_command_line_tools() {
     return 1
 }
 
+# gitが実行できることを確かめる
+# 存在するだけでは不十分で、Xcodeが選択されていてライセンス未同意の場合などは
+# 実行時に失敗する。brew tap が git に依存するため、ここで気付けるようにする
+verify_git_usable() {
+    if git --version &> /dev/null; then
+        return
+    fi
+
+    echo "git を実行できません（参照先: $(xcode-select -p 2>/dev/null)）"
+    echo "Xcodeのライセンス未同意が原因の場合は、次を実行すると解消します"
+    echo "  sudo xcodebuild -license accept"
+    echo "この状態では一部のインストールに失敗する可能性があります"
+}
+
 # Command Line Tools を確保する
 ensure_command_line_tools() {
     echo "Command Line Tools を確認中"
 
     if command_line_tools_installed; then
         echo "Command Line Tools は既にインストールされています（$(xcode-select -p 2>/dev/null)）"
+        verify_git_usable
         return
     fi
 
@@ -241,6 +256,8 @@ ensure_command_line_tools() {
         sudo xcode-select --switch /Library/Developer/CommandLineTools || true
     fi
 
+    verify_git_usable
+    
     echo "Command Line Tools のインストール完了"
 }
 
@@ -324,6 +341,36 @@ missing_bundle_items() {
         | sed -E 's/^→[[:space:]]*//' || true
 }
 
+# 「Cask obs needs to be installed or updated.」のような1行から、その項目だけを導入する
+install_bundle_item() {
+    local line="$1"
+    local type name
+    type="$(printf '%s' "$line" | awk '{print $1}')"
+    name="$(printf '%s' "$line" | awk '{print $2}')"
+
+    [ -n "$name" ] || return 1
+
+    case "$type" in
+        Tap)     brew tap "$name" ;;
+        Cask)    brew install --cask --adopt "$name" ;;
+        Formula) brew install "$name" ;;
+        Service) brew services start "$name" ;;
+        *)       return 1 ;;
+    esac
+}
+
+# brew bundle は全項目をまとめて1回の brew install に渡すため、1項目でも名前を解決
+# できないと（タップ失敗など）何も導入されないまま終わる。個別に導入し直すことで、
+# 失敗の影響をその項目だけに閉じ込める
+install_missing_items_individually() {
+    local line
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        echo "  $line"
+        install_bundle_item "$line" || true
+    done <<< "$(missing_bundle_items)"
+}
+
 install_apps() {
     echo "Brewfile に基づいてアプリケーションをインストール中"
     
@@ -345,8 +392,19 @@ install_apps() {
         return
     fi
     
+    echo "一括導入に失敗したため、項目ごとに導入します"
+    install_missing_items_individually
+    
+    local remaining
+    remaining="$(missing_bundle_items)"
+    
+    if [ -z "$remaining" ]; then
+        echo "アプリケーションのインストール完了"
+        return
+    fi
+    
     echo "以下の項目を導入できませんでした"
-    missing_bundle_items | sed 's/^/  - /'
+    printf '%s\n' "$remaining" | sed 's/^/  - /'
     echo "Homebrew以外の方法で既に導入されているアプリは、Homebrewの管理下にないため"
     echo "未導入として扱われます。その場合は次のコマンドで取り込めます"
     echo "  brew install --cask --force <名前>"
