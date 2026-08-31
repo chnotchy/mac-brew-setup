@@ -694,11 +694,6 @@ run_checks() {
 reboot_system() {
     echo "一部の設定は再起動後に反映されます"
 
-    # FileVaultが有効だと再起動後に解錠画面で止まる。放置して先に進めないため予告する
-    if fdesetup status 2>/dev/null | grep -q "FileVault is On"; then
-        echo "FileVaultが有効です。再起動後は解錠パスワードの入力が必要です"
-    fi
-
     local remaining="$REBOOT_COUNTDOWN"
     echo "再起動します（中止する場合は Ctrl+C）"
 
