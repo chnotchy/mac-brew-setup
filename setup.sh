@@ -32,8 +32,6 @@ export HOMEBREW_NO_AUTO_UPDATE=1
 
 # ネットワーク疎通確認に使うURL（Appleのキャプティブポータル検出用エンドポイント）
 NETWORK_CHECK_URL="http://captive.apple.com/hotspot-detect.html"
-# 非対話モード（--yes）でネットワーク接続を待つタイムアウト（秒）
-NETWORK_WAIT_AUTO=600
 # Command Line Tools のGUIインストール待ちタイムアウト（秒）
 CLT_WAIT=1800
 # デフォルトブラウザ変更の確認ダイアログ操作を待つタイムアウト（秒）
@@ -42,6 +40,8 @@ DEFAULT_BROWSER_WAIT=600
 DEFAULT_BROWSER_MANUAL_WAIT=600
 # 操作を促すメッセージを再表示する間隔（秒）
 REMINDER_INTERVAL=60
+# 再起動までのカウントダウン（秒）
+REBOOT_COUNTDOWN=15
 
 # 離席していても戻ってきた時に状況が分かるよう、待ち状況を再表示する
 print_waiting_notice() {
@@ -143,19 +143,6 @@ ensure_network() {
         echo "設定画面を開けませんでした。メニューバーのWi-Fiアイコンから接続してください"
     fi
     echo "接続を検知すると自動的に続きを実行します（このターミナルに戻る必要はありません）"
-
-    # 非対話モードでは無制限に待たず、タイムアウトしたら中止する
-    if [ "$AUTO_YES" = "true" ]; then
-        echo "最大 $((NETWORK_WAIT_AUTO / 60)) 分待機します"
-
-        if wait_for_online "$NETWORK_WAIT_AUTO"; then
-            echo "ネットワークに接続されました"
-            return
-        fi
-
-        echo "ネットワークに接続できなかったため、セットアップを中止します"
-        exit 1
-    fi
 
     echo "中止する場合は Ctrl+C を押してください"
     wait_for_online 0
@@ -703,47 +690,42 @@ run_checks() {
     return 1
 }
 
-# セットアップ完了後の再起動確認
-prompt_reboot() {
+# セットアップ完了後に再起動する
+reboot_system() {
     echo "一部の設定は再起動後に反映されます"
-    
-    if [ "$AUTO_YES" = "true" ]; then
-        echo "再起動します..."
-        sudo shutdown -r now
-        return
+
+    # FileVaultが有効だと再起動後に解錠画面で止まる。放置して先に進めないため予告する
+    if fdesetup status 2>/dev/null | grep -q "FileVault is On"; then
+        echo "FileVaultが有効です。再起動後は解錠パスワードの入力が必要です"
     fi
-    
-    # パイプ実行などで標準入力がない場合、read は即失敗するため再起動は行わない
-    if [ ! -t 0 ]; then
-        echo "対話できない環境のため、再起動をスキップしました。手動で再起動してください"
-        return
-    fi
-    
-    local answer=""
-    read -r -p "今すぐ再起動しますか？ [y/N] " answer || true
-    case "$answer" in
-        [yY]*)
-            echo "再起動します..."
-            sudo shutdown -r now
-            ;;
-        *)
-            echo "再起動をスキップしました。設定を反映するには手動で再起動してください"
-            ;;
-    esac
+
+    local remaining="$REBOOT_COUNTDOWN"
+    echo "再起動します（中止する場合は Ctrl+C）"
+
+    while [ "$remaining" -gt 0 ]; do
+        printf '\r  あと %2d 秒 ' "$remaining"
+        sleep 1
+        remaining=$((remaining - 1))
+    done
+    echo
+
+    sudo shutdown -r now
 }
 
 main() {
-    AUTO_YES="false"
-    
     case "${1:-}" in
-        -y|--yes)
-            AUTO_YES="true"
+        "")
             ;;
         --check)
             # 検証のみ。設定は変更しないため管理者権限も不要
             if run_checks; then
                 exit 0
             fi
+            exit 1
+            ;;
+        *)
+            echo "不明なオプション: $1"
+            echo "使い方: setup.sh [--check]"
             exit 1
             ;;
     esac
@@ -786,6 +768,6 @@ main() {
     
     echo "セットアップ完了"
     
-    prompt_reboot
+    reboot_system
 }
 main "$@"

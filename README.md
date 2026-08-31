@@ -14,11 +14,7 @@ curl -fsSL https://github.com/chnotchy/mac-brew-setup/archive/main.tar.gz | tar 
 ```
 
 
-確認なしで最後まで自動実行し、完了後に自動再起動する場合は `--yes`（または `-y`）を付けます。
-
-```bash
-curl -fsSL https://github.com/chnotchy/mac-brew-setup/archive/main.tar.gz | tar xz && ./mac-brew-setup-main/setup.sh --yes
-```
+セットアップが完了すると、自動的に再起動します（再起動前に15秒のカウントダウンが表示され、Ctrl+C で中止できます）。
 
 ### セットアップ結果の確認
 
