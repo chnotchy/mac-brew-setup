@@ -26,6 +26,10 @@ curl -fsSL https://github.com/chnotchy/mac-brew-setup/archive/main.tar.gz | tar 
 ~/mac-brew-setup-main/setup.sh --check
 ```
 
+## 手動での操作が必要な設定
+
+**True Tone のオフ**は自動化できません。設定がディスプレイ固有IDに紐づいて保存されており、`defaults` から確実に変更する方法がないためです。セットアップの前半でディスプレイ設定を開いて操作を依頼します（`--check` でも検証できません）。
+
 ## セットアップされる内容
 
 ### インストールされるアプリケーション（[Brewfile](Brewfile) で管理）
@@ -37,6 +41,7 @@ curl -fsSL https://github.com/chnotchy/mac-brew-setup/archive/main.tar.gz | tar 
 - NDI Tools（cask: `ndi-tools`）
 - ffmpeg（動画・音声の変換／配信用CLI）
 - MediaMTX（RTSP/RTMP/SRT/WebRTC のメディアサーバー）
+- Docker Compose（Docker Desktop にも同梱）
 - node_exporter（ログイン時に自動起動）
 - jq
 - defaultbrowser（デフォルトブラウザの設定に使用）
@@ -53,5 +58,7 @@ curl -fsSL https://github.com/chnotchy/mac-brew-setup/archive/main.tar.gz | tar 
   - クリック感度をLight（軽い）に設定
   - 3本指ドラッグを有効化（競合する3本指スワイプは無効化し、Mission Control・スペース切り替えは4本指スワイプに集約）
   - ナチュラルスクロールを有効化（コンテンツが指に追従する方向）
+- キーボード入力（キーリピート・リピート開始をいずれも最速、長押しによるアクセント入力を無効化）
+- ディスプレイごとに個別の操作スペースを有効化
 - メニューバー表示（時計を秒表示・24時間表示、バッテリー残量をパーセンテージ表示）
 - Finder表示（カラム表示、隠しファイル・拡張子表示、パスバー・ステータスバー表示）

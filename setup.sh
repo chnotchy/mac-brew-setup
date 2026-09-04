@@ -411,6 +411,27 @@ install_apps() {
     echo "セットアップは続行します"
 }
 
+# True Tone を無効にしてもらう
+# 設定はディスプレイ固有IDに紐づいてrootの領域に保存されており、
+# defaults から確実に変更する方法がないため、画面を開いて操作を依頼する
+prompt_true_tone() {
+    echo "True Tone をオフにしてください"
+
+    if ! open "x-apple.systempreferences:com.apple.Displays-Settings.extension" 2>/dev/null; then
+        open "/System/Library/PreferencePanes/Displays.prefPane" 2>/dev/null || true
+    fi
+
+    echo "システム設定 > ディスプレイ で「True Tone」のチェックを外してください"
+    echo "（項目が無い機種・外部ディスプレイの場合はそのまま進んで構いません）"
+
+    if [ ! -t 0 ]; then
+        echo "対話できない環境のため確認を省略します。手動で設定してください"
+        return
+    fi
+
+    read -r -p "完了したら Enter を押してください " _ || true
+}
+
 # Chrome と、デフォルトブラウザの設定に使うコマンドをインストールする
 install_browser_tools() {
     echo "Chrome をインストール中"
@@ -587,6 +608,38 @@ configure_trackpad() {
     echo "  - Click: Light（軽い）"
     echo "  - 3本指ドラッグ: 有効（Mission Controlなどは4本指スワイプ）"
     echo "  - ナチュラルスクロール: 有効"
+}
+
+# キーボード入力の速度設定
+configure_keyboard() {
+    echo "キーボード入力の速度設定を変更中"
+
+    # キーリピート速度とリピート開始までの待ち時間を最速にする
+    # システム設定のスライダーの下限（2 / 15）よりさらに速い値を指定できる
+    defaults write NSGlobalDomain KeyRepeat -int 1
+    defaults write NSGlobalDomain InitialKeyRepeat -int 10
+
+    # 長押しでアクセント記号の候補を出す挙動を無効化する
+    # 有効なままだとキーリピート自体が働かない
+    defaults write NSGlobalDomain ApplePressAndHoldEnabled -bool false
+
+    echo "キーボード入力の速度設定を完了しました"
+    echo "  - キーリピート: 最速"
+    echo "  - リピート入力認識までの時間: 最短"
+    echo "  - 長押しによるアクセント入力: 無効"
+}
+
+# 操作スペースの設定
+configure_spaces() {
+    echo "操作スペースの設定を変更中"
+
+    # 「ディスプレイごとに個別の操作スペース」を有効にする
+    # spans-displays は「1つの操作スペースが全ディスプレイにまたがる」設定なので
+    # 個別にしたい場合は false を指定する
+    defaults write com.apple.spaces spans-displays -bool false
+
+    echo "操作スペースの設定を完了しました"
+    echo "  - ディスプレイごとに個別の操作スペース: 有効"
 }
 
 # 時計とバッテリー表示設定
@@ -775,6 +828,16 @@ run_checks() {
     check_value "ナチュラルスクロール有効" "1" "$(read_default NSGlobalDomain com.apple.swipescrolldirection)"
 
     echo
+    echo "[キーボード]"
+    check_value "キーリピート最速" "1" "$(read_default NSGlobalDomain KeyRepeat)"
+    check_value "リピート開始が最短" "10" "$(read_default NSGlobalDomain InitialKeyRepeat)"
+    check_value "長押しアクセント入力が無効" "0" "$(read_default NSGlobalDomain ApplePressAndHoldEnabled)"
+
+    echo
+    echo "[操作スペース]"
+    check_value "ディスプレイごとに個別" "0" "$(read_default com.apple.spaces spans-displays)"
+
+    echo
     echo "[メニューバー]"
     check_value "時計: 24時間表示" "1" "$(read_default com.apple.menuextra.clock Show24Hour)"
     check_value "時計: 秒表示" "1" "$(read_default com.apple.menuextra.clock ShowSeconds)"
@@ -858,6 +921,7 @@ main() {
     
     install_browser_tools
     set_chrome_default_browser
+    prompt_true_tone
     
     echo
     echo "============================================================"
@@ -871,6 +935,8 @@ main() {
     
     # macOS設定の変更
     configure_trackpad
+    configure_keyboard
+    configure_spaces
     configure_menubar
     configure_finder
     
