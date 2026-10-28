@@ -42,6 +42,13 @@ DEFAULT_BROWSER_MANUAL_WAIT=600
 REMINDER_INTERVAL=60
 # 再起動までのカウントダウン（秒）
 REBOOT_COUNTDOWN=15
+# GStreamer で共通セットアップとして確認する要素（DeckLink は任意のため含めない）
+GSTREAMER_ELEMENTS=(
+    vtenc_h264
+    vtdec
+    srtsink
+    fdkaacenc
+)
 
 # 離席していても戻ってきた時に状況が分かるよう、待ち状況を再表示する
 print_waiting_notice() {
@@ -409,6 +416,50 @@ install_apps() {
     echo "未導入として扱われます。その場合は次のコマンドで取り込めます"
     echo "  brew install --cask --force <名前>"
     echo "セットアップは続行します"
+}
+
+# GStreamer の必須要素が揃っているか確認する
+# 成功時は何も出さず 0 を返す。失敗時は欠ける要素名を標準出力に出して 1 を返す
+missing_gstreamer_elements() {
+    local element output
+    local missing=0
+
+    if ! command -v gst-inspect-1.0 &> /dev/null; then
+        echo "gst-inspect-1.0"
+        return 1
+    fi
+
+    for element in "${GSTREAMER_ELEMENTS[@]}"; do
+        output="$(gst-inspect-1.0 "$element" 2>&1)" || true
+        if printf '%s\n' "$output" | grep -q "No such element"; then
+            echo "$element"
+            missing=1
+        fi
+    done
+
+    [ "$missing" -eq 0 ]
+}
+
+# インストール直後に gst-inspect で要素の有無を確認する
+verify_gstreamer_plugins() {
+    echo "GStreamer プラグインを確認中"
+    echo "  gst-inspect-1.0 ${GSTREAMER_ELEMENTS[*]}"
+
+    if ! command -v gst-inspect-1.0 &> /dev/null; then
+        echo "gst-inspect-1.0 が見つかりません（gstreamer のインストールを確認してください）"
+        return
+    fi
+
+    local missing
+    missing="$(missing_gstreamer_elements || true)"
+
+    if [ -z "$missing" ]; then
+        echo "GStreamer プラグインはすべて利用できます（No such element なし）"
+        return
+    fi
+
+    echo "以下の要素が見つかりませんでした"
+    printf '%s\n' "$missing" | sed 's/^/  - /'
 }
 
 # True Tone を無効にしてもらう
@@ -803,6 +854,20 @@ run_checks() {
     fi
 
     echo
+    echo "[GStreamer]"
+    check_condition "gst-inspect-1.0" "未インストール" command -v gst-inspect-1.0
+    if command -v gst-inspect-1.0 &> /dev/null; then
+        local element
+        for element in "${GSTREAMER_ELEMENTS[@]}"; do
+            if gst-inspect-1.0 "$element" 2>&1 | grep -q "No such element"; then
+                check_ng "$element" "No such element"
+            else
+                check_ok "$element"
+            fi
+        done
+    fi
+
+    echo
     echo "[デフォルトブラウザ]"
     if command -v jq &> /dev/null; then
         local handler
@@ -932,6 +997,7 @@ main() {
     
     # アプリケーションのインストール
     install_apps
+    verify_gstreamer_plugins
     
     # macOS設定の変更
     configure_trackpad

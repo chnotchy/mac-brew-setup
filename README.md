@@ -36,10 +36,13 @@ curl -fsSL https://github.com/chnotchy/mac-brew-setup/archive/main.tar.gz | tar 
 
 - Google Chrome
 - OBS
+- VLC
 - DistroAV（OBS用NDIプラグイン）
 - Docker Desktop（cask: `docker-desktop`）
 - NDI Tools（cask: `ndi-tools`）
 - ffmpeg（動画・音声の変換／配信用CLI）
+- GStreamer（`gst-inspect-1.0` で VideoToolbox / SRT / FDK-AAC を確認）
+- uv（Python パッケージマネージャ）
 - MediaMTX（RTSP/RTMP/SRT/WebRTC のメディアサーバー）
 - Docker Compose（Docker Desktop にも同梱）
 - node_exporter（ログイン時に自動起動）
@@ -62,3 +65,14 @@ curl -fsSL https://github.com/chnotchy/mac-brew-setup/archive/main.tar.gz | tar 
 - ディスプレイごとに個別の操作スペースを有効化
 - メニューバー表示（時計を秒表示・24時間表示、バッテリー残量をパーセンテージ表示）
 - Finder表示（カラム表示、隠しファイル・拡張子表示、パスバー・ステータスバー表示）
+
+## 任意: Blackmagic Desktop Video
+
+1. [Blackmagic Design Support](https://www.blackmagicdesign.com/support) を開く
+2. Capture and Playback から Desktop Video の Mac 用をダウンロードする（登録は任意。「Download Only」で可）
+3. インストーラに従い、求められたらシステム拡張を許可して再起動する
+4. 次のコマンドで GStreamer の DeckLink 要素を含め、必要なプラグインが入っていることを確認する。「No such element」と出なければ OK
+
+```bash
+gst-inspect-1.0 decklinkvideosrc decklinkvideosink vtenc_h264 vtdec srtsink fdkaacenc
+```
