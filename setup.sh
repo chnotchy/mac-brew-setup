@@ -38,6 +38,8 @@ CLT_WAIT=1800
 DEFAULT_BROWSER_WAIT=600
 # デフォルトブラウザをGUIで手動設定してもらう場合の待ちタイムアウト（秒）
 DEFAULT_BROWSER_MANUAL_WAIT=600
+# 共有設定（画面共有・リモートログイン）をGUIで手動設定してもらう場合の待ちタイムアウト（秒）
+REMOTE_ACCESS_MANUAL_WAIT=600
 # 操作を促すメッセージを再表示する間隔（秒）
 REMINDER_INTERVAL=60
 # 再起動までのカウントダウン（秒）
@@ -325,7 +327,8 @@ setup_homebrew() {
     fi
     
     echo "Homebrew をインストール中"
-    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    # 対話モードだと「Press RETURN」で止まるため、確認なしで進める（sudo は取得済み）
+    NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
     
     # パスを追加
     if ! grep -q 'brew shellenv' ~/.zprofile 2>/dev/null; then
@@ -462,10 +465,27 @@ verify_gstreamer_plugins() {
     printf '%s\n' "$missing" | sed 's/^/  - /'
 }
 
+# True Tone がオフになっていることを確認できるか
+# 設定は root の com.apple.CoreBrightness にユーザーごと（CBUser-<GeneratedUID>）に保存される
+# 読み取れない・項目が無い場合はオフと断定できないため、失敗として扱う
+true_tone_is_off() {
+    local uid settings
+    uid="$(dscl . -read "/Users/$(whoami)" GeneratedUID 2>/dev/null | awk '{print $2}')"
+    [ -n "$uid" ] || return 1
+
+    settings="$(sudo -n defaults read com.apple.CoreBrightness "CBUser-$uid" 2>/dev/null)" || return 1
+    printf '%s\n' "$settings" | grep -q 'CBColorAdaptationEnabled = 0;'
+}
+
 # True Tone を無効にしてもらう
-# 設定はディスプレイ固有IDに紐づいてrootの領域に保存されており、
-# defaults から確実に変更する方法がないため、画面を開いて操作を依頼する
+# 書き込みはディスプレイ固有IDとも結びついており defaults から確実に変更する方法が
+# ないため、画面を開いて操作を依頼する
 prompt_true_tone() {
+    if true_tone_is_off; then
+        echo "True Tone は既にオフのため、スキップします"
+        return
+    fi
+
     echo "True Tone をオフにしてください"
 
     if ! open "x-apple.systempreferences:com.apple.Displays-Settings.extension" 2>/dev/null; then
@@ -602,12 +622,43 @@ set_chrome_default_browser() {
     echo "セットアップ完了後に手動で設定してください"
 }
 
+# 再起動が必要な設定を変更したかどうか（何も変わらなければ再起動しない）
+SETTINGS_CHANGED=0
+
+# defaults の値が期待どおりでなければ書き込み、変更があったことを記録する
+# 使い方: set_default [-currentHost] <ドメイン> <キー> <-bool|-int|-float|-string> <値>
+set_default() {
+    local host_args=()
+    if [ "$1" = "-currentHost" ]; then
+        host_args=(-currentHost)
+        shift
+    fi
+
+    local domain="$1" key="$2" type="$3" value="$4"
+    local expected current
+
+    # defaults read が返す表記に揃えて比較する
+    case "$type" in
+        -bool)  if [ "$value" = "true" ]; then expected=1; else expected=0; fi ;;
+        -float) expected="$(printf '%s' "$value" | sed 's/\.0$//')" ;;
+        *)      expected="$value" ;;
+    esac
+
+    current="$(defaults "${host_args[@]}" read "$domain" "$key" 2>/dev/null || true)"
+    if [ "$current" = "$expected" ]; then
+        return 0
+    fi
+
+    defaults "${host_args[@]}" write "$domain" "$key" "$type" "$value"
+    SETTINGS_CHANGED=1
+}
+
 # スクリーンセーバーとスリープを無効化（AC電源・バッテリー電源の両方）
 disable_screensaver_and_sleep() {
     echo "スクリーンセーバーとスリープを無効化中"
     
     # スクリーンセーバーを無効化
-    defaults -currentHost write com.apple.screensaver idleTime 0
+    set_default -currentHost com.apple.screensaver idleTime -int 0
     
     # ディスプレイ・システム・ハードディスクのスリープを無効化（AC・バッテリー両方）
     sudo pmset -a displaysleep 0 sleep 0 disksleep 0
@@ -667,9 +718,29 @@ enable_remote_access() {
     fi
 
     echo "次の項目を自動で有効化できませんでした: ${failed[*]}"
-    echo "  システム設定 > 一般 > 共有 で手動でオンにしてください"
-    echo "セットアップは続行します"
+    echo "システム設定を開きます。一般 > 共有 で「画面共有」と「リモートログイン」をオンにしてください"
     open "$SHARING_SETTINGS_URL" 2>/dev/null || true
+    echo "オンになったことを検知すると自動的に続きを実行します"
+
+    local waited=0
+    while [ "$waited" -lt "$REMOTE_ACCESS_MANUAL_WAIT" ]; do
+        if remote_login_enabled && screen_sharing_enabled; then
+            echo
+            echo "リモートログイン（SSH）と画面共有が有効になりました"
+            return
+        fi
+
+        if [ "$waited" -gt 0 ] && [ $((waited % REMINDER_INTERVAL)) -eq 0 ]; then
+            print_waiting_notice "$waited" "システム設定 > 一般 > 共有 で「画面共有」と「リモートログイン」をオンにしてください"
+        fi
+
+        printf '.'
+        sleep 5
+        waited=$((waited + 5))
+    done
+
+    echo
+    echo "有効になったことを確認できませんでした。セットアップは続行します"
 }
 
 # トラックパッド・マウス設定
@@ -677,35 +748,35 @@ configure_trackpad() {
     echo "トラックパッド・マウス設定を変更中"
     
     # Tap to click を有効化
-    defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad Clicking -bool true
-    defaults write com.apple.AppleMultitouchTrackpad Clicking -bool true
-    defaults -currentHost write NSGlobalDomain com.apple.mouse.tapBehavior -int 1
+    set_default com.apple.driver.AppleBluetoothMultitouch.trackpad Clicking -bool true
+    set_default com.apple.AppleMultitouchTrackpad Clicking -bool true
+    set_default -currentHost NSGlobalDomain com.apple.mouse.tapBehavior -int 1
     
     # カーソル速度を最大に設定（トラックパッド・マウス両方）
-    defaults write NSGlobalDomain com.apple.trackpad.scaling -float 3.0
-    defaults write NSGlobalDomain com.apple.mouse.scaling -float 3.0
+    set_default NSGlobalDomain com.apple.trackpad.scaling -float 3.0
+    set_default NSGlobalDomain com.apple.mouse.scaling -float 3.0
     
     # Click を Light（軽いクリック）に設定
-    defaults write com.apple.AppleMultitouchTrackpad FirstClickThreshold -int 0
-    defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad FirstClickThreshold -int 0
+    set_default com.apple.AppleMultitouchTrackpad FirstClickThreshold -int 0
+    set_default com.apple.driver.AppleBluetoothMultitouch.trackpad FirstClickThreshold -int 0
     
     # 3本指ドラッグを有効化
-    defaults write com.apple.AppleMultitouchTrackpad TrackpadThreeFingerDrag -bool true
-    defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadThreeFingerDrag -bool true
+    set_default com.apple.AppleMultitouchTrackpad TrackpadThreeFingerDrag -bool true
+    set_default com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadThreeFingerDrag -bool true
 
     # 3本指ドラッグと競合する3本指スワイプを無効化
     # （Mission Control・スペース切り替えは4本指スワイプに集約する）
-    defaults write com.apple.AppleMultitouchTrackpad TrackpadThreeFingerHorizSwipeGesture -int 0
-    defaults write com.apple.AppleMultitouchTrackpad TrackpadThreeFingerVertSwipeGesture -int 0
-    defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadThreeFingerHorizSwipeGesture -int 0
-    defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadThreeFingerVertSwipeGesture -int 0
-    defaults write com.apple.AppleMultitouchTrackpad TrackpadFourFingerHorizSwipeGesture -int 2
-    defaults write com.apple.AppleMultitouchTrackpad TrackpadFourFingerVertSwipeGesture -int 2
-    defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadFourFingerHorizSwipeGesture -int 2
-    defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadFourFingerVertSwipeGesture -int 2
+    set_default com.apple.AppleMultitouchTrackpad TrackpadThreeFingerHorizSwipeGesture -int 0
+    set_default com.apple.AppleMultitouchTrackpad TrackpadThreeFingerVertSwipeGesture -int 0
+    set_default com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadThreeFingerHorizSwipeGesture -int 0
+    set_default com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadThreeFingerVertSwipeGesture -int 0
+    set_default com.apple.AppleMultitouchTrackpad TrackpadFourFingerHorizSwipeGesture -int 2
+    set_default com.apple.AppleMultitouchTrackpad TrackpadFourFingerVertSwipeGesture -int 2
+    set_default com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadFourFingerHorizSwipeGesture -int 2
+    set_default com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadFourFingerVertSwipeGesture -int 2
 
     # ナチュラルスクロールを有効化（コンテンツが指に追従する方向にする）
-    defaults write NSGlobalDomain com.apple.swipescrolldirection -bool true
+    set_default NSGlobalDomain com.apple.swipescrolldirection -bool true
     
     # Dock を再起動
     killall Dock 2>/dev/null || true
@@ -724,12 +795,12 @@ configure_keyboard() {
 
     # キーリピート速度とリピート開始までの待ち時間を最速にする
     # システム設定のスライダーの下限（2 / 15）よりさらに速い値を指定できる
-    defaults write NSGlobalDomain KeyRepeat -int 1
-    defaults write NSGlobalDomain InitialKeyRepeat -int 10
+    set_default NSGlobalDomain KeyRepeat -int 1
+    set_default NSGlobalDomain InitialKeyRepeat -int 10
 
     # 長押しでアクセント記号の候補を出す挙動を無効化する
     # 有効なままだとキーリピート自体が働かない
-    defaults write NSGlobalDomain ApplePressAndHoldEnabled -bool false
+    set_default NSGlobalDomain ApplePressAndHoldEnabled -bool false
 
     echo "キーボード入力の速度設定を完了しました"
     echo "  - キーリピート: 最速"
@@ -744,7 +815,7 @@ configure_spaces() {
     # 「ディスプレイごとに個別の操作スペース」を有効にする
     # spans-displays は「1つの操作スペースが全ディスプレイにまたがる」設定なので
     # 個別にしたい場合は false を指定する
-    defaults write com.apple.spaces spans-displays -bool false
+    set_default com.apple.spaces spans-displays -bool false
 
     echo "操作スペースの設定を完了しました"
     echo "  - ディスプレイごとに個別の操作スペース: 有効"
@@ -756,13 +827,13 @@ configure_menubar() {
     
     # 時計の表示形式を設定（秒表示、24時間表示）
     # Big Sur 以降、表示形式は DateFormat ではなく個別のキーで管理される
-    defaults write com.apple.menuextra.clock Show24Hour -bool true
-    defaults write com.apple.menuextra.clock ShowSeconds -bool true
-    defaults write com.apple.menuextra.clock FlashDateSeparators -bool false
+    set_default com.apple.menuextra.clock Show24Hour -bool true
+    set_default com.apple.menuextra.clock ShowSeconds -bool true
+    set_default com.apple.menuextra.clock FlashDateSeparators -bool false
     
     # バッテリーのパーセンテージ表示を有効化
-    defaults write com.apple.menuextra.battery ShowPercent -string "YES"
-    defaults -currentHost write com.apple.controlcenter BatteryShowPercentage -bool true
+    set_default com.apple.menuextra.battery ShowPercent -string "YES"
+    set_default -currentHost com.apple.controlcenter BatteryShowPercentage -bool true
     
     echo "メニューバーの表示設定を完了しました"
     echo "  - 時計: 秒表示・24時間表示"
@@ -774,25 +845,25 @@ configure_finder() {
     echo "Finderをカラム表示に設定中"
     
     # デフォルトビューをカラム表示に設定
-    defaults write com.apple.finder FXPreferredViewStyle -string "clmv"
+    set_default com.apple.finder FXPreferredViewStyle -string "clmv"
     
     # 隠しファイルを表示
-    defaults write com.apple.finder AppleShowAllFiles -bool true
+    set_default com.apple.finder AppleShowAllFiles -bool true
     
     # ファイル拡張子を表示
-    defaults write NSGlobalDomain AppleShowAllExtensions -bool true
+    set_default NSGlobalDomain AppleShowAllExtensions -bool true
     
     # パスバーを表示
-    defaults write com.apple.finder ShowPathbar -bool true
+    set_default com.apple.finder ShowPathbar -bool true
     
     # ステータスバーを表示
-    defaults write com.apple.finder ShowStatusBar -bool true
+    set_default com.apple.finder ShowStatusBar -bool true
     
     # タイトルバーにフルパスを表示
-    defaults write com.apple.finder _FXShowPosixPathInTitle -bool true
+    set_default com.apple.finder _FXShowPosixPathInTitle -bool true
     
     # サイドバーを表示
-    defaults write com.apple.finder ShowSidebar -bool true
+    set_default com.apple.finder ShowSidebar -bool true
     
     # フォルダごとに保存されたビュー設定は FXPreferredViewStyle より優先されるため、
     # 削除してカラム表示を反映させる（.DS_Store が保持するのはFinderの表示状態のみ）
@@ -1072,6 +1143,11 @@ main() {
     configure_finder
     
     echo "セットアップ完了"
+    
+    if [ "$SETTINGS_CHANGED" -eq 0 ]; then
+        echo "変更した設定が無いため、再起動はしません"
+        return
+    fi
     
     reboot_system
 }

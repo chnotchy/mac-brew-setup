@@ -14,7 +14,7 @@ curl -fsSL https://github.com/chnotchy/mac-brew-setup/archive/main.tar.gz | tar 
 ```
 
 
-セットアップが完了すると、自動的に再起動します（再起動前に15秒のカウントダウンが表示され、Ctrl+C で中止できます）。
+セットアップが完了すると、自動的に再起動します（再起動前に15秒のカウントダウンが表示され、Ctrl+C で中止できます）。再実行時など、変更した設定が無い場合は再起動しません。
 
 ### セットアップ結果の確認
 
@@ -28,7 +28,7 @@ curl -fsSL https://github.com/chnotchy/mac-brew-setup/archive/main.tar.gz | tar 
 
 ## 手動での操作が必要な設定
 
-**True Tone のオフ**は自動化できません。設定がディスプレイ固有IDに紐づいて保存されており、`defaults` から確実に変更する方法がないためです。セットアップの前半でディスプレイ設定を開いて操作を依頼します（`--check` でも検証できません）。
+**True Tone のオフ**は自動化できません。設定がディスプレイ固有IDに紐づいて保存されており、`defaults` から確実に変更する方法がないためです。セットアップの前半でディスプレイ設定を開いて操作を依頼します。既にオフであることを確認できた場合は依頼を省略します（`--check` では検証しません）。
 
 ## セットアップされる内容
 
@@ -69,10 +69,12 @@ curl -fsSL https://github.com/chnotchy/mac-brew-setup/archive/main.tar.gz | tar 
 
 ## 任意: Blackmagic Desktop Video
 
+再起動を1回で済ませるため、手順 1〜3 は setup.sh の実行前に行います。
+
 1. [Blackmagic Design Support](https://www.blackmagicdesign.com/support) を開く
 2. Capture and Playback から Desktop Video の Mac 用をダウンロードする（登録は任意。「Download Only」で可）
-3. インストーラに従い、求められたらシステム拡張を許可して再起動する
-4. 次のコマンドで GStreamer の DeckLink 要素を含め、必要なプラグインが入っていることを確認する。「No such element」と出なければ OK
+3. インストーラに従い、求められたらシステム拡張を許可する。再起動を求められても、ここでは再起動せずに setup.sh を実行する（setup.sh 完了時の再起動で反映される）
+4. setup.sh 完了・再起動後に、次のコマンドで GStreamer の DeckLink 要素を含め、必要なプラグインが入っていることを確認する。「No such element」と出なければ OK
 
 ```bash
 gst-inspect-1.0 decklinkvideosrc decklinkvideosink vtenc_h264 vtdec srtsink avenc_aac
