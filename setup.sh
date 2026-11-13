@@ -615,6 +615,63 @@ disable_screensaver_and_sleep() {
     echo "スクリーンセーバーとスリープを無効化しました"
 }
 
+# リモートログイン（SSH）と画面共有の launchd ジョブ
+REMOTE_LOGIN_LABEL="com.openssh.sshd"
+REMOTE_LOGIN_PLIST="/System/Library/LaunchDaemons/ssh.plist"
+SCREEN_SHARING_LABEL="com.apple.screensharing"
+SCREEN_SHARING_PLIST="/System/Library/LaunchDaemons/com.apple.screensharing.plist"
+SHARING_SETTINGS_URL="x-apple.systempreferences:com.apple.Sharing-Settings.extension"
+
+# launchd ジョブが system ドメインに読み込まれているか（root 不要）
+launch_daemon_loaded() {
+    launchctl print "system/$1" &> /dev/null
+}
+
+remote_login_enabled() {
+    launch_daemon_loaded "$REMOTE_LOGIN_LABEL"
+}
+
+screen_sharing_enabled() {
+    launch_daemon_loaded "$SCREEN_SHARING_LABEL"
+}
+
+# システム設定の「共有」にあるスイッチと同じ状態にする
+# systemsetup -setremotelogin は「フルディスクアクセス」が無いと失敗する
+# OS があるため使わず、launchctl で直接有効化する（再起動後も有効なまま）
+enable_launch_daemon() {
+    local label="$1"
+    local plist="$2"
+
+    sudo launchctl enable "system/$label" 2>/dev/null || true
+    if ! launch_daemon_loaded "$label"; then
+        # 既に読み込み済みの場合はエラーになるが、状態は下で確認する
+        sudo launchctl bootstrap system "$plist" 2>/dev/null || true
+    fi
+
+    launch_daemon_loaded "$label"
+}
+
+# 別の端末から SSH・画面共有で接続できるようにする
+# セットアップ中の不具合も遠隔で調べられるよう、時間のかかる処理より前に実行する
+enable_remote_access() {
+    echo "リモートログイン（SSH）と画面共有を有効化中"
+
+    local failed=()
+    enable_launch_daemon "$REMOTE_LOGIN_LABEL" "$REMOTE_LOGIN_PLIST" || failed+=("リモートログイン")
+    enable_launch_daemon "$SCREEN_SHARING_LABEL" "$SCREEN_SHARING_PLIST" || failed+=("画面共有")
+
+    if [ "${#failed[@]}" -eq 0 ]; then
+        echo "リモートログイン（SSH）と画面共有を有効化しました"
+        echo "  接続先: $(whoami)@$(scutil --get LocalHostName 2>/dev/null || hostname -s).local"
+        return
+    fi
+
+    echo "次の項目を自動で有効化できませんでした: ${failed[*]}"
+    echo "  システム設定 > 一般 > 共有 で手動でオンにしてください"
+    echo "セットアップは続行します"
+    open "$SHARING_SETTINGS_URL" 2>/dev/null || true
+}
+
 # トラックパッド・マウス設定
 configure_trackpad() {
     echo "トラックパッド・マウス設定を変更中"
@@ -878,6 +935,11 @@ run_checks() {
     fi
 
     echo
+    echo "[共有]"
+    check_condition "リモートログイン（SSH）" "無効です" remote_login_enabled
+    check_condition "画面共有" "無効です" screen_sharing_enabled
+
+    echo
     echo "[スリープ・スクリーンセーバー]"
     check_value "スクリーンセーバー無効" "0" "$(read_default_currenthost com.apple.screensaver idleTime)"
     check_condition "スリープ無効（AC・バッテリー両方）" "有効なままの項目があります" sleep_is_disabled
@@ -974,7 +1036,10 @@ main() {
     # 管理者権限をあらかじめ取得し、以降のsudoプロンプトをなくす
     # （Command Line Tools のインストールにも必要なため、ここで取得しておく）
     request_sudo
-    
+
+    # 以降で問題が起きても別の端末から調べられるよう、最初に遠隔接続を有効にする
+    enable_remote_access
+
     # インストールに時間がかかるため、先にスリープを無効化しておく
     disable_screensaver_and_sleep
     
