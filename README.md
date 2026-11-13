@@ -41,7 +41,7 @@ curl -fsSL https://github.com/chnotchy/mac-brew-setup/archive/main.tar.gz | tar 
 - Docker Desktop（cask: `docker-desktop`）
 - NDI Tools（cask: `ndi-tools`）
 - ffmpeg（動画・音声の変換／配信用CLI）
-- GStreamer（`gst-inspect-1.0` で VideoToolbox / SRT / FDK-AAC を確認）
+- GStreamer（`gst-inspect-1.0` で VideoToolbox / SRT / AAC（`avenc_aac`）を確認）
 - uv（Python パッケージマネージャ）
 - MediaMTX（RTSP/RTMP/SRT/WebRTC のメディアサーバー）
 - Docker Compose（Docker Desktop にも同梱）
@@ -74,5 +74,5 @@ curl -fsSL https://github.com/chnotchy/mac-brew-setup/archive/main.tar.gz | tar 
 4. 次のコマンドで GStreamer の DeckLink 要素を含め、必要なプラグインが入っていることを確認する。「No such element」と出なければ OK
 
 ```bash
-gst-inspect-1.0 decklinkvideosrc decklinkvideosink vtenc_h264 vtdec srtsink fdkaacenc
+gst-inspect-1.0 decklinkvideosrc decklinkvideosink vtenc_h264 vtdec srtsink avenc_aac
 ```

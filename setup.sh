@@ -47,7 +47,7 @@ GSTREAMER_ELEMENTS=(
     vtenc_h264
     vtdec
     srtsink
-    fdkaacenc
+    avenc_aac
 )
 
 # 離席していても戻ってきた時に状況が分かるよう、待ち状況を再表示する
