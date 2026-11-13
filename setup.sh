@@ -319,7 +319,14 @@ setup_homebrew() {
     
     if command -v brew &> /dev/null; then
         echo "Homebrew は既にインストールされています"
-        
+
+        # 自動更新を止めているため、以前のレンタル時などから残る古い Homebrew のままになる
+        # 古い版では新しい macOS や API に追従できずインストールが途中で止まるため、ここで1回だけ更新する
+        echo "Homebrew を最新版に更新中"
+        if ! brew update; then
+            echo "Homebrew の更新に失敗しました。現在のバージョンのまま続行します"
+        fi
+
         # タップをクリーンアップ
         cleanup_homebrew_taps
         
